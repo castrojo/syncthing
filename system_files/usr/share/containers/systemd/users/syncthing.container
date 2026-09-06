@@ -1,0 +1,42 @@
+[Unit]
+Description=Syncthing peer-to-peer file synchronization
+Documentation=man:syncthing(1) https://docs.syncthing.net/
+Wants=network-online.target
+After=network-online.target
+
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Container]
+Image=ghcr.io/syncthing/syncthing:2
+AutoUpdate=registry
+
+# Dynamic user/group mapping for rootless container
+User=%U
+Group=%G
+UserNS=keep-id
+
+# Environment & security hardening
+Environment=HOME=/var/syncthing
+Environment=STHOMEDIR=/var/syncthing
+Environment=STGUIADDRESS=127.0.0.1:8384
+Environment=STNOUPGRADE=1
+Environment=STNORESTART=1
+
+# State and dedicated user sync volume
+Volume=%S/syncthing:/var/syncthing:Z
+Volume=%h/Sync:/var/syncthing/Sync:Z
+
+# Network configuration: host network for LAN broadcast and Tailscale mesh
+Network=host
+
+Notify=healthy
+NoNewPrivileges=true
+DropCapability=ALL
+StopTimeout=45
+
+[Service]
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=300
+TimeoutStopSec=60s
