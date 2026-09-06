@@ -1,109 +1,107 @@
-# Syncthing Cloud-Native Multi-Device Sync
+# Syncthing for Project Bluefin
 
-A zero-touch, automated Syncthing deployment across computers using:
-1. **Cluster Introducer Hub** (Kubernetes / k3s) as the 24/7 permanent anchor.
-2. **Podman Quadlets** on Linux / Bluefin desktops with rootless `keep-id` (UID 1000) and specific folder mounts.
-3. **Automated Container Updates** via `AutoUpdate=registry` and `podman-auto-update.timer`.
-4. **Modern GNOME Quick Settings Toggle** (`syncthing-toggle`) matching macOS Control Center slickness (no legacy systray).
+A declarative, rootless, zero-maintenance Syncthing deployment designed specifically for [Project Bluefin](https://projectbluefin.io/) and Fedora Atomic desktops.
+
+## Architecture
+
+Syncthing runs as a declarative rootless user service via Podman Quadlet with pure peer-to-peer (P2P) synchronization:
+
+```
+  ┌──────────────────────────────┐                   ┌──────────────────────────────┐
+  │      Bluefin Desktop A       │                   │      Bluefin Desktop B       │
+  │  - Rootless Podman Quadlet   │                   │  - Rootless Podman Quadlet   │
+  │  - Mounts ~/Sync & state     │◄─────────────────►│  - Mounts ~/Sync & state     │
+  │  - Desktop App Launcher      │   (Direct P2P:    │  - Desktop App Launcher      │
+  │  - podman-auto-update.timer  │   LAN / Tailscale)│  - podman-auto-update.timer  │
+  └──────────────────────────────┘                   └──────────────────────────────┘
+```
+
+- **Pure Peer-to-Peer:** Devices discover and sync directly with each other over local network broadcast (UDP 21027), global discovery, and Tailscale mesh networks. No centralized servers or cluster hubs required.
+- **Rootless & Secure:** Runs strictly in user session namespace (`UserNS=keep-id`, `User=%U`, `Group=%G`) with all Linux capabilities dropped (`DropCapability=ALL`) and `NoNewPrivileges=true`.
+- **Hardened Web GUI:** The management Web GUI is bound strictly to loopback (`127.0.0.1:8384`), preventing exposure across the network.
+- **Automated Container Updates:** Tracks `ghcr.io/syncthing/syncthing:2` from GitHub Container Registry with `AutoUpdate=registry`, automatically updated via Podman's `podman-auto-update.timer`.
 
 ---
 
-## Architecture Overview
+## Shipped System Files
 
-```
-                        ┌──────────────────────────────────────────────┐
-                        │      Kubernetes / k3s Cluster Hub            │
-                        │      - Syncthing Introducer (24/7)           │
-                        │      - Auto-Accepts shared folders           │
-                        │      - Connects all client nodes             │
-                        └──────────────────────┬───────────────────────┘
-                                               │ (Introducer link)
-                     ┌─────────────────────────┴────────────────────────┐
-                     ▼                                                  ▼
-      ┌──────────────────────────────┐                   ┌──────────────────────────────┐
-      │     Workstation / Laptop     │                   │       Secondary Laptop       │
-      │  - Rootless Podman Quadlet   │                   │  - Rootless Podman Quadlet   │
-      │  - Mounts ~/Documents, ~/src │◄─────────────────►│  - Mounts ~/Documents, ~/src │
-      │  - GNOME Quick Settings Pill │   (Direct peer    │  - GNOME Quick Settings Pill │
-      │  - Daily Auto-Update Timer   │     transfer)     │  - Daily Auto-Update Timer   │
-      └──────────────────────────────┘                   └──────────────────────────────┘
-```
+This repository packages declarative system files directly into the Bluefin OS image:
+
+- `system_files/usr/share/containers/systemd/users/syncthing.container`
+  Installed system-wide to `/usr/share/containers/systemd/users/syncthing.container`. Quadlet automatically generates a user-level systemd service (`syncthing.service`) for every user.
+- `system_files/usr/share/applications/syncthing.desktop`
+  Installed system-wide to `/usr/share/applications/syncthing.desktop`. Integrates Syncthing into desktop application menus with quick actions to start/stop the service and launch the Web GUI.
 
 ---
 
-## 1. Deploy Cluster Introducer (k8s / k3s)
+## Usage
 
-Run on your cluster:
+### Managing the Service
+
+Users can manage Syncthing either via the desktop application menu or via `systemctl`:
+
+- **Start Syncthing:**
+  - Desktop: Right-click the **Syncthing** application icon and choose **Start Syncthing**, or
+  - CLI:
+    ```bash
+    systemctl --user start syncthing
+    ```
+- **Stop Syncthing:**
+  - Desktop: Right-click the **Syncthing** application icon and choose **Stop Syncthing**, or
+  - CLI:
+    ```bash
+    systemctl --user stop syncthing
+    ```
+- **Enable on Login (Optional):**
+  To automatically start Syncthing when logging into your desktop session:
+  ```bash
+  systemctl --user enable syncthing
+  ```
+
+### Accessing the Web GUI
+
+Click the **Syncthing** application launcher or navigate in any browser to:
+[http://127.0.0.1:8384/](http://127.0.0.1:8384/)
+
+---
+
+## Storage & Paths
+
+The container isolates configuration/state from user sync data:
+
+| Purpose | Host Path | Container Path |
+|---|---|---|
+| Configuration & Database | `%S/syncthing` (`~/.local/state/syncthing`) | `/var/syncthing` |
+| Sync Folder | `%h/Sync` (`~/Sync`) | `/var/syncthing/Sync` |
+
+SELinux relabeling (`:Z`) is automatically applied to both mounts to ensure access in SELinux-enforcing environments.
+
+---
+
+## Automated Updates
+
+Updates are handled natively by Podman without external daemons:
+
+1. The Quadlet unit specifies `AutoUpdate=registry` against `ghcr.io/syncthing/syncthing:2`.
+2. Enable the standard user auto-update timer if not already active:
+   ```bash
+   systemctl --user enable --now podman-auto-update.timer
+   ```
+3. When new container image tags are published to `ghcr.io/syncthing/syncthing:2`, `podman auto-update` pulls the latest layer and restarts `syncthing.service` automatically.
+
+---
+
+## Verification & Testing
+
+Validation test suites are provided under `tests/`:
+
+- `tests/test_quadlet_syntax.sh`: Validates Quadlet configuration directives and security constraints.
+- `tests/test_desktop_entry.sh`: Validates desktop launcher actions and URL definitions.
+- `tests/test_cleanup.sh`: Validates removal of obsolete manifests and scripts.
+
+Run all tests:
 ```bash
-kubectl apply -k k8s/
-```
-
-Retrieve the Cluster Introducer's Device ID:
-```bash
-kubectl exec -n syncthing syncthing-introducer-0 -- syncthing cli show system | jq -r .myID
-```
-
-*(Note: In the Cluster Web GUI, ensure your designated shared folders have **Auto-Accept** enabled).*
-
----
-
-## 2. Onboard a Desktop / Laptop (Bluefin / Linux)
-
-Run the single-command onboarding script on each computer:
-
-```bash
-./onboard-client.sh --cluster-id "<CLUSTER_DEVICE_ID>" --folders "Documents,src"
-```
-
-### What this does automatically:
-1. Generates `~/.config/containers/systemd/syncthing.container` with:
-   - Rootless UID mapping (`UserNS=keep-id`).
-   - Specific folder volume mounts (`~/Documents`, `~/src`).
-   - Automated registry updates (`AutoUpdate=registry`).
-   - Host networking for high-speed LAN & Tailscale mesh transfer.
-2. Enables and starts the user systemd service: `systemctl --user enable --now syncthing.service`.
-3. Activates background container auto-updates via `systemctl --user enable --now podman-auto-update.timer`.
-4. Pairs the computer with the Cluster Introducer via Syncthing REST API / CLI (`introducer=true`).
-5. Installs and activates the modern **GNOME Quick Settings Toggle** (`syncthing-toggle`).
-6. Displays the local Device ID to approve once on the cluster.
-
----
-
-## 3. Modern GNOME Quick Settings Toggle
-
-No legacy systray. The extension adds a native toggle pill inside GNOME's Quick Settings menu (top right):
-- **Click pill**: Starts/stops `syncthing.service`.
-- **Click arrow**: Displays status and one-click **Open Web GUI** (`http://127.0.0.1:8384`).
-
-To manually install or re-configure:
-```bash
-./extension/install-syncthing-toggle.sh
-```
-
----
-
-## 4. Automated Container Updates
-
-- **Desktops**: Configured with `AutoUpdate=registry`. The systemd user timer `podman-auto-update.timer` runs daily, checks registry image digests, pulls updates, and restarts the container safely.
-- **Cluster**: StatefulSet configured with `imagePullPolicy: Always` and Keel/Watchtower annotations for automated rolling image updates.
-
----
-
-## Directory Structure
-
-```
-syncthing/
-├── k8s/                         # Kubernetes Introducer manifests
-│   ├── namespace.yaml
-│   ├── pvc.yaml
-│   ├── service.yaml
-│   ├── statefulset.yaml
-│   └── kustomization.yaml
-├── quadlet/                     # Quadlet client assets
-│   ├── syncthing.container.template
-│   └── enable-auto-update.sh
-├── extension/                   # GNOME Quick Settings extension helper
-│   └── install-syncthing-toggle.sh
-├── onboard-client.sh            # Main client onboarding CLI
-└── README.md
+bash tests/test_quadlet_syntax.sh
+bash tests/test_desktop_entry.sh
+bash tests/test_cleanup.sh
 ```
