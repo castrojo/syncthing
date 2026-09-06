@@ -17,6 +17,7 @@ grep -q "UserNS=keep-id" "$QUADLET_FILE" || { echo "FAIL: Missing UserNS=keep-id
 grep -q "Network=host" "$QUADLET_FILE" || { echo "FAIL: Missing Network=host"; exit 1; }
 grep -q "Volume=%S/syncthing:/var/syncthing:Z" "$QUADLET_FILE" || { echo "FAIL: Missing state volume"; exit 1; }
 grep -q "Volume=%h/Sync:/var/syncthing/Sync:Z" "$QUADLET_FILE" || { echo "FAIL: Missing Sync volume"; exit 1; }
+grep -q "StateDirectory=syncthing" "$QUADLET_FILE" || { echo "FAIL: Missing StateDirectory=syncthing"; exit 1; }
 grep -q "WantedBy=default.target" "$QUADLET_FILE" || { echo "FAIL: Missing WantedBy=default.target"; exit 1; }
 
 echo "PASS: Quadlet unit validated successfully."
