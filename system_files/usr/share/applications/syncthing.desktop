@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=Syncthing
+Comment=Peer-to-peer file synchronization
+Exec=xdg-open http://127.0.0.1:8384/
+Icon=folder-sync
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+Actions=Start;Stop;
+
+[Desktop Action Start]
+Name=Start Syncthing
+Exec=systemctl --user start --no-block syncthing.service
+
+[Desktop Action Stop]
+Name=Stop Syncthing
+Exec=systemctl --user stop syncthing.service
