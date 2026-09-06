@@ -27,8 +27,8 @@ Syncthing runs as a declarative rootless user service via Podman Quadlet with pu
 
 This repository packages declarative system files directly into the Bluefin OS image:
 
-- `system_files/usr/share/containers/systemd/users/syncthing.container`
-  Installed system-wide to `/usr/share/containers/systemd/users/syncthing.container`. Quadlet automatically generates a user-level systemd service (`syncthing.service`) for every user.
+- `system_files/etc/containers/systemd/users/syncthing.container`
+  Installed system-wide to `/etc/containers/systemd/users/syncthing.container`. Quadlet automatically generates a user-level systemd service (`syncthing.service`) for every user.
 - `system_files/usr/share/applications/syncthing.desktop`
   Installed system-wide to `/usr/share/applications/syncthing.desktop`. Integrates Syncthing into desktop application menus with quick actions to start/stop the service and launch the Web GUI.
 
@@ -57,6 +57,7 @@ Users can manage Syncthing either via the desktop application menu or via `syste
   ```bash
   systemctl --user enable syncthing
   ```
+  The Quadlet container definition includes an `[Install]` section (`WantedBy=default.target`), generating the necessary installation targets so systemd can enable the service.
 
 ### Accessing the Web GUI
 
